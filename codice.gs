@@ -594,7 +594,7 @@ function aggiornaDashboardRevenue() {
   var revenueMgmt = 0, revenueIUNP = 0, revenuePipelinePonderata = 0;
   var clusterBreakdown = {}, fonteBreakdown = {}, stadioBreakdown = {};
   data.forEach(function(row) {
-    var id = row[0]; if (!id || id === 'TOTALI' || id === '') return;
+    var id = row[0]; if (typeof id !== 'number' || id <= 0) return; // skip TOTALI e righe non-dati
     var tipoCliente = row[2], fonte = row[3], stadio = row[5], probabilita = row[6];
     var aumPotenziale = row[7], aumVersato = row[9], cluster = row[15];
     var mgmtFee = row[17], iunpFee = row[18];
@@ -714,7 +714,7 @@ function aggiornaCashFlow() {
   }
   var revenueRicorrenteMensile = 0;
   data.forEach(function(row) {
-    var id = row[0]; if (!id || id === 'TOTALI' || id === '') return;
+    var id = row[0]; if (typeof id !== 'number' || id <= 0) return; // skip TOTALI e righe non-dati
     var tipoCliente = row[2], stadio = row[5], probabilita = row[6], aumPotenziale = row[7];
     var dataUltimoContatto = row[12], mgmtFee = row[17];
     if (tipoCliente === 'Già Cliente') {
@@ -816,7 +816,11 @@ function eseguiControlloGiornaliero() {
   var urgenti = [], followup = [], riattiva = [], persi = [], followupOggi = [], followupScaduti = [];
   var totalPotenziali = 0, totalClienti = 0, aumPipeline = 0;
   data.forEach(function(row) {
-    var id = row[0]; if (!id || id === 'TOTALI' || id === '') return;
+    var id = row[0];
+    // FIX AUM DOPPIO: usa controllo di tipo (tutti gli ID validi sono numeri interi > 0)
+    // La riga TOTALI ha una stringa in col.A e la sua formula H già somma tutti gli AUM:
+    // includerla causava un esatto raddoppio dell'AUM Pipeline nell'email.
+    if (typeof id !== 'number' || id <= 0) return;
     var nome = row[1], tipoCliente = row[2], stadio = row[5], probabilita = row[6];
     var aumPotenziale = row[7], dataUltimoContatto = row[12], prossimoFollowup = row[22], noteFollowup = row[23];
     if (tipoCliente === 'Già Cliente') { totalClienti++; return; }
@@ -894,7 +898,7 @@ function aggiornaKanban() {
   var kanban = {};
   CONFIG.STADI_PIPELINE.forEach(function(s) { kanban[s] = []; });
   data.forEach(function(row) {
-    var id = row[0]; if (!id || id === 'TOTALI' || id === '') return;
+    var id = row[0]; if (typeof id !== 'number' || id <= 0) return; // skip TOTALI e righe non-dati
     if (row[2] === 'Già Cliente') return;
     var stadio = row[5], dataUC = row[12];
     var giorniSilenzio = 0;
@@ -956,7 +960,7 @@ function aggiornaAnalisiConversione() {
   var stadiCount = {}, fonteAnalisi = {}, clusterAnalisi = {};
   var chiusi = 0, chiusiAum = 0;
   data.forEach(function(row) {
-    var id = row[0]; if (!id || id === 'TOTALI' || id === '') return;
+    var id = row[0]; if (typeof id !== 'number' || id <= 0) return; // skip TOTALI e righe non-dati
     var tipoCliente = row[2], fonte = row[3], stadio = row[5];
     var aum = typeof row[7]==='number'?row[7]:0, aumV = typeof row[9]==='number'?row[9]:0, cluster = row[19];
     var stadioIndex = CONFIG.STADI_PIPELINE.indexOf(stadio);
