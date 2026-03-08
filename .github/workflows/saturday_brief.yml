@@ -1,0 +1,35 @@
+name: Saturday Brief
+
+on:
+  schedule:
+    # Ogni sabato alle 06:00 UTC = 07:00 CET (08:00 CEST in estate)
+    - cron: '0 6 * * 6'
+  # Trigger manuale per test e prime esecuzioni
+  workflow_dispatch:
+
+jobs:
+  briefing:
+    name: Genera spunti settimanali
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: saturday_brief/requirements.txt
+
+      - name: Installa dipendenze
+        run: pip install -r saturday_brief/requirements.txt
+
+      - name: Esegui Saturday Brief
+        working-directory: saturday_brief
+        run: python main.py
+        env:
+          NOTION_API_KEY:     ${{ secrets.NOTION_API_KEY }}
+          CLAUDE_API_KEY:     ${{ secrets.CLAUDE_API_KEY }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
