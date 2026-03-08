@@ -1,12 +1,16 @@
 """
 Fetches and parses Italian financial/economic news from RSS feeds.
 Returns articles published in the last 7 days.
+Uses only stdlib (urllib + xml.etree) — no feedparser dependency.
 """
 
-import feedparser
 import logging
+import re
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
-from dateutil import parser as dateparser
+from email.utils import parsedate_to_datetime
+from urllib.request import Request, urlopen
+from urllib.error import URLError
 
 logger = logging.getLogger(__name__)
 
@@ -21,37 +25,131 @@ RSS_SOURCES = [
 MAX_PER_SOURCE = 6
 LOOKBACK_DAYS = 7
 
+# Common RSS/Atom namespaces
+NS = {
+    "atom": "http://www.w3.org/2005/Atom",
+    "dc":   "http://purl.org/dc/elements/1.1/",
+    "media":"http://search.yahoo.com/mrss/",
+}
 
-def _parse_date(entry) -> datetime | None:
-    """Extract and parse publication date from a feedparser entry."""
-    raw = (
-        getattr(entry, "published", None)
-        or getattr(entry, "updated", None)
-        or getattr(entry, "created", None)
-    )
+
+def _get_text(el, *tags) -> str:
+    """Try multiple tag names (with/without namespace), return first non-empty text."""
+    for tag in tags:
+        child = el.find(tag)
+        if child is not None and child.text:
+            return child.text.strip()
+        # Try with common namespaces
+        for prefix, uri in NS.items():
+            child = el.find(f"{{{uri}}}{tag}")
+            if child is not None and child.text:
+                return child.text.strip()
+    return ""
+
+
+def _clean_html(text: str) -> str:
+    """Strip HTML tags and collapse whitespace."""
+    clean = re.sub(r"<[^>]+>", " ", text or "")
+    return " ".join(clean.split())[:300]
+
+
+def _parse_date(raw: str) -> datetime | None:
+    """Parse RFC 2822 (RSS) or ISO 8601 (Atom) date strings."""
     if not raw:
         return None
+    raw = raw.strip()
+    # Try RFC 2822 (pubDate in RSS)
     try:
-        dt = dateparser.parse(raw)
-        if dt and dt.tzinfo is None:
+        dt = parsedate_to_datetime(raw)
+        if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
     except Exception:
+        pass
+    # Try ISO 8601 (Atom published/updated)
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(raw[:25], fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            continue
+    return None
+
+
+def _fetch_url(url: str) -> str | None:
+    """Fetch URL content as UTF-8 string with a browser User-Agent."""
+    req = Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (compatible; SaturdayBrief/1.0; +https://github.com)"
+    })
+    try:
+        with urlopen(req, timeout=15) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except URLError as e:
+        logger.warning("HTTP error fetching %s: %s", url, e)
         return None
 
 
-def _extract_summary(entry) -> str:
-    """Extract a clean text summary (max 300 chars) from a feedparser entry."""
-    raw = (
-        getattr(entry, "summary", None)
-        or getattr(entry, "description", None)
-        or ""
-    )
-    # Strip HTML tags roughly
-    import re
-    clean = re.sub(r"<[^>]+>", " ", raw).strip()
-    clean = " ".join(clean.split())
-    return clean[:300]
+def _parse_rss_feed(xml_text: str, fonte: str, cutoff: datetime, max_items: int) -> list[dict]:
+    """Parse RSS 2.0 or Atom feed XML, return filtered article dicts."""
+    articles = []
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        logger.warning("XML parse error for %s: %s", fonte, e)
+        return articles
+
+    tag = root.tag.lower().strip("{}")
+    # Detect feed type: RSS wraps items in <channel>, Atom uses <entry> directly
+    if "rss" in tag or root.find("channel") is not None:
+        items = root.findall(".//item")
+    else:
+        # Atom feed
+        items = (
+            root.findall("atom:entry", NS)
+            or root.findall("{http://www.w3.org/2005/Atom}entry")
+            or root.findall(".//entry")
+        )
+
+    for item in items:
+        if len(articles) >= max_items:
+            break
+
+        # Title
+        titolo = _get_text(item, "title")
+        if not titolo:
+            continue
+
+        # Link — RSS uses <link> text, Atom uses <link href="...">
+        link = _get_text(item, "link")
+        if not link:
+            # Atom <link> element with href attribute
+            link_el = item.find("{http://www.w3.org/2005/Atom}link") or item.find("link")
+            if link_el is not None:
+                link = link_el.get("href", "")
+        if not link:
+            continue
+
+        # Date
+        raw_date = _get_text(item, "pubDate", "published", "updated", "dc:date")
+        pub_date = _parse_date(raw_date)
+        if pub_date and pub_date < cutoff:
+            continue  # too old
+
+        # Summary
+        raw_summary = _get_text(item, "description", "summary", "content")
+        sommario = _clean_html(raw_summary)
+
+        articles.append({
+            "titolo": titolo,
+            "url": link,
+            "fonte": fonte,
+            "data": pub_date.strftime("%Y-%m-%d") if pub_date else "n/d",
+            "sommario": sommario,
+        })
+
+    return articles
 
 
 def fetch_weekly_news() -> list[dict]:
@@ -66,35 +164,14 @@ def fetch_weekly_news() -> list[dict]:
 
     for source in RSS_SOURCES:
         try:
-            feed = feedparser.parse(source["url"])
-            if feed.bozo and not feed.entries:
-                logger.warning("Feed non raggiungibile o malformato: %s", source["url"])
+            xml_text = _fetch_url(source["url"])
+            if not xml_text:
+                logger.warning("Nessun contenuto da: %s", source["url"])
                 continue
 
-            count = 0
-            for entry in feed.entries:
-                if count >= MAX_PER_SOURCE:
-                    break
-
-                pub_date = _parse_date(entry)
-                if pub_date and pub_date < cutoff:
-                    continue  # troppo vecchio
-
-                link = getattr(entry, "link", None) or getattr(entry, "id", "")
-                titolo = getattr(entry, "title", "").strip()
-                if not titolo or not link:
-                    continue
-
-                all_articles.append({
-                    "titolo": titolo,
-                    "url": link,
-                    "fonte": source["fonte"],
-                    "data": pub_date.strftime("%Y-%m-%d") if pub_date else "n/d",
-                    "sommario": _extract_summary(entry),
-                })
-                count += 1
-
-            logger.info("Feed %s: %d articoli recuperati", source["fonte"], count)
+            articles = _parse_rss_feed(xml_text, source["fonte"], cutoff, MAX_PER_SOURCE)
+            all_articles.extend(articles)
+            logger.info("Feed %s: %d articoli recuperati", source["fonte"], len(articles))
 
         except Exception as e:
             logger.warning("Errore fetch %s: %s", source["url"], e)
