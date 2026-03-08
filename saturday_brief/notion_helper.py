@@ -71,9 +71,10 @@ def _get_client() -> Client:
     return Client(auth=api_key)
 
 
-def ensure_database_schema(database_id: str) -> None:
+def ensure_database_schema(database_id: str) -> str:
     """
-    Verifies the database exists and adds any missing properties.
+    Verifies the database exists, adds missing properties, and returns
+    the name of the title property (renaming it to 'Titolo' if needed).
     """
     client = _get_client()
     try:
@@ -85,6 +86,26 @@ def ensure_database_schema(database_id: str) -> None:
         )
 
     existing = db.get("properties", {})
+
+    # Find the title property (every database has exactly one)
+    title_prop_name = "Titolo"
+    for name, prop in existing.items():
+        if prop.get("type") == "title":
+            title_prop_name = name
+            break
+
+    # Rename title property to "Titolo" if it has a different name
+    if title_prop_name != "Titolo":
+        logger.info("Rinomino proprietà title da '%s' a 'Titolo'", title_prop_name)
+        try:
+            client.databases.update(
+                database_id=database_id,
+                properties={title_prop_name: {"name": "Titolo"}},
+            )
+            title_prop_name = "Titolo"
+        except Exception as e:
+            logger.warning("Impossibile rinominare title property: %s. Uso '%s'.", e, title_prop_name)
+
     missing = {k: v for k, v in REQUIRED_PROPERTIES.items() if k not in existing}
 
     if missing:
@@ -96,6 +117,8 @@ def ensure_database_schema(database_id: str) -> None:
         logger.info("Schema database aggiornato.")
     else:
         logger.info("Schema database già completo.")
+
+    return title_prop_name
 
 
 def get_recent_topics(database_id: str, days: int = 60) -> list[str]:
@@ -139,7 +162,7 @@ def get_recent_topics(database_id: str, days: int = 60) -> list[str]:
     return results
 
 
-def publish_spunti(database_id: str, spunti: list[dict]) -> int:
+def publish_spunti(database_id: str, spunti: list[dict], title_prop: str = "Titolo") -> int:
     """
     Creates one Notion page per spunto.
     Returns the number of pages successfully created.
@@ -152,7 +175,7 @@ def publish_spunti(database_id: str, spunti: list[dict]) -> int:
         try:
             client.pages.create(
                 parent={"database_id": database_id},
-                properties=_build_page_properties(spunto, today),
+                properties=_build_page_properties(spunto, today, title_prop),
             )
             logger.info("Spunto %d/%d creato: %s", i + 1, len(spunti), spunto.get("titolo", ""))
             created += 1
@@ -164,9 +187,9 @@ def publish_spunti(database_id: str, spunti: list[dict]) -> int:
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _build_page_properties(spunto: dict, today: str) -> dict:
+def _build_page_properties(spunto: dict, today: str, title_prop: str = "Titolo") -> dict:
     return {
-        "Titolo": {
+        title_prop: {
             "title": [{"text": {"content": spunto.get("titolo", "")}}]
         },
         "Pubblico": {

@@ -55,7 +55,7 @@ def main() -> None:
 
     # 3. Verifica/aggiorna schema database Notion
     logger.info("Verifica schema database Notion (ID: %s)...", database_id)
-    ensure_database_schema(database_id)
+    title_prop = ensure_database_schema(database_id)
 
     # 4. Recupera spunti precedenti (ultimi 60 giorni) per evitare ripetizioni
     logger.info("Recupero spunti pubblicati negli ultimi 60 giorni...")
@@ -67,7 +67,7 @@ def main() -> None:
 
     # 6. Pubblica su Notion
     logger.info("Pubblicazione %d spunti su Notion...", len(spunti))
-    created = publish_spunti(database_id, spunti)
+    created = publish_spunti(database_id, spunti, title_prop)
 
     # 7. Riepilogo
     logger.info("=" * 60)
