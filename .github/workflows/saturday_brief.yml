@@ -28,8 +28,16 @@ jobs:
 
       - name: Esegui Saturday Brief
         working-directory: saturday_brief
-        run: python main.py
+        run: python main.py 2>&1 | tee ../run.log; exit ${PIPESTATUS[0]}
         env:
           NOTION_API_KEY:     ${{ secrets.NOTION_API_KEY }}
           CLAUDE_API_KEY:     ${{ secrets.CLAUDE_API_KEY }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+
+      - name: Carica log come artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saturday-brief-log
+          path: run.log
+          retention-days: 7
