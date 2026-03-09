@@ -134,7 +134,6 @@ def get_recent_topics(database_id: str, days: int = 60) -> list[str]:
 
     while True:
         kwargs = {
-            "database_id": database_id,
             "filter": {
                 "property": "Data Settimana",
                 "date": {"on_or_after": cutoff},
@@ -144,7 +143,7 @@ def get_recent_topics(database_id: str, days: int = 60) -> list[str]:
         if cursor:
             kwargs["start_cursor"] = cursor
 
-        response = client.databases.query(**kwargs)
+        response = client.data_sources.query(database_id, **kwargs)
 
         for page in response.get("results", []):
             props = page.get("properties", {})
