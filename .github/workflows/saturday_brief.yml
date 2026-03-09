@@ -26,7 +26,9 @@ jobs:
           cache-dependency-path: saturday_brief/requirements.txt
 
       - name: Installa dipendenze
-        run: pip install -r saturday_brief/requirements.txt
+        run: |
+          pip install --no-cache-dir -r saturday_brief/requirements.txt
+          pip show notion-client | grep Version
 
       - name: Diagnosi e avvio Saturday Brief
         working-directory: saturday_brief
