@@ -15,11 +15,11 @@ from urllib.error import URLError
 logger = logging.getLogger(__name__)
 
 RSS_SOURCES = [
-    {"url": "https://www.ilsole24ore.com/rss/economia.xml",            "fonte": "Sole24Ore"},
-    {"url": "https://www.ansa.it/sito/notizie/economia/economia.rss",  "fonte": "ANSA"},
-    {"url": "https://www.mef.gov.it/it/media/news/index.html?rss",    "fonte": "MEF"},
-    {"url": "https://www.bancaditalia.it/media/notizie/index.html?rss","fonte": "BancaItalia"},
-    {"url": "https://it.reuters.com/rss/economia",                     "fonte": "Reuters"},
+    {"url": "https://www.ilsole24ore.com/rss/economia.xml",                         "fonte": "Sole24Ore"},
+    {"url": "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",            "fonte": "ANSA"},
+    {"url": "https://www.bancaditalia.it/media/notizie/notizie-2024/index.html?rss", "fonte": "BancaItalia"},
+    {"url": "https://feeds.finanza.com/feeds/wired",                                 "fonte": "Wired"},
+    {"url": "https://www.corriere.it/rss/economia.xml",                              "fonte": "Corriere"},
 ]
 
 MAX_PER_SOURCE = 6
