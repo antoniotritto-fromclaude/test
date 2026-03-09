@@ -29,6 +29,7 @@ jobs:
       - name: Diagnosi e avvio Saturday Brief
         working-directory: saturday_brief
         run: |
+          LOG_FILE="../run.log"
           {
             echo "=== NOTION API CHECK ==="
             echo "DB_ID=${NOTION_DATABASE_ID:0:8}...${NOTION_DATABASE_ID: -4}"
@@ -38,11 +39,19 @@ jobs:
               "https://api.notion.com/v1/databases/$NOTION_DATABASE_ID")
             echo "HTTP Status: $HTTP"
             python3 -m json.tool /tmp/notion.json 2>/dev/null | head -20 || cat /tmp/notion.json
+            echo ""
             echo "=== MAIN SCRIPT ==="
-          } 2>&1 | tee ../run.log
+          } 2>&1 | tee "$LOG_FILE"
 
-          python main.py 2>&1 | tee -a ../run.log
-          exit ${PIPESTATUS[0]}
+          python main.py 2>&1 | tee -a "$LOG_FILE"
+          SCRIPT_EXIT=${PIPESTATUS[0]}
+
+          # Write to Step Summary so it's accessible via API
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat "$LOG_FILE" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+          exit $SCRIPT_EXIT
         env:
           NOTION_API_KEY:     ${{ secrets.NOTION_API_KEY }}
           CLAUDE_API_KEY:     ${{ secrets.CLAUDE_API_KEY }}
