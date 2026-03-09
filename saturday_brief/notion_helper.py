@@ -143,7 +143,12 @@ def get_recent_topics(database_id: str, days: int = 60) -> list[str]:
         if cursor:
             kwargs["start_cursor"] = cursor
 
-        response = client.data_sources.query(database_id, **kwargs)
+        # notion-client v3 removed databases.query; call the REST endpoint directly
+        response = client.request(
+            path=f"databases/{database_id}/query",
+            method="POST",
+            body=kwargs,
+        )
 
         for page in response.get("results", []):
             props = page.get("properties", {})
