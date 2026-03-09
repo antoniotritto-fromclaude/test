@@ -44,6 +44,9 @@ jobs:
             echo "HTTP Status: $HTTP"
             python3 -m json.tool /tmp/notion.json 2>/dev/null | head -20 || cat /tmp/notion.json
             echo ""
+            echo "=== PACKAGES ==="
+            pip show notion-client anthropic 2>&1
+            echo ""
             echo "=== MAIN SCRIPT ==="
           } 2>&1 | tee "$LOG_FILE"
 
