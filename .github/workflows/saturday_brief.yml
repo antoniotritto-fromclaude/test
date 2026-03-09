@@ -22,13 +22,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: saturday_brief/requirements.txt
 
       - name: Installa dipendenze
-        run: |
-          pip install --no-cache-dir -r saturday_brief/requirements.txt
-          pip show notion-client | grep Version
+        run: pip install --no-cache-dir -r saturday_brief/requirements.txt
 
       - name: Diagnosi e avvio Saturday Brief
         working-directory: saturday_brief
@@ -43,9 +39,6 @@ jobs:
               "https://api.notion.com/v1/databases/$NOTION_DATABASE_ID")
             echo "HTTP Status: $HTTP"
             python3 -m json.tool /tmp/notion.json 2>/dev/null | head -20 || cat /tmp/notion.json
-            echo ""
-            echo "=== PACKAGES ==="
-            pip show notion-client anthropic 2>&1
             echo ""
             echo "=== MAIN SCRIPT ==="
           } 2>&1 | tee "$LOG_FILE"
