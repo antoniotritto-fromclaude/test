@@ -49,6 +49,8 @@ function onOpen() {
       .addItem('⏰ Installa Alert Giornaliero', 'installaTriggerGiornaliero')
       .addItem('🗑️ Rimuovi Alert Giornaliero', 'rimuoviTriggerGiornaliero')
       .addItem('📧 Test Email Alert (Invio Immediato)', 'testAlertEmail')
+      .addSeparator()
+      .addItem('✉️ Configura Email Mittente/Destinatario', 'mostraFormImpostazioniEmail')
     )
     .addSeparator()
     .addItem('ℹ️ Guida Rapida', 'mostraGuida')
@@ -843,9 +845,126 @@ function eseguiControlloGiornaliero() {
   var totaleAlert = urgenti.length + followup.length + riattiva.length + persi.length + followupOggi.length + followupScaduti.length;
   if (totaleAlert === 0) return;
   var emailBody = _costruisciEmailAlert({ urgenti:urgenti, followup:followup, riattiva:riattiva, persi:persi, followupOggi:followupOggi, followupScaduti:followupScaduti, totalPotenziali:totalPotenziali, totalClienti:totalClienti, aumPipeline:aumPipeline, oggi:oggi });
-  // FIX BUG 2: variabile oggetto ora correttamente definita
   var oggetto = '🚨 CRM Alert: ' + totaleAlert + ' azioni — ' + Utilities.formatDate(oggi, Session.getScriptTimeZone(), 'dd/MM/yyyy');
-  MailApp.sendEmail({to:CONFIG.EMAIL_NOTIFICHE, subject:oggetto, htmlBody:emailBody, name:'Antonio Tritto'});
+  var emailCfg = _getEmailSettings();
+  var mailOptions = {to: emailCfg.destinatario, subject: oggetto, htmlBody: emailBody, name: emailCfg.nomeMittente};
+  if (emailCfg.replyTo) mailOptions.replyTo = emailCfg.replyTo;
+  MailApp.sendEmail(mailOptions);
+}
+// =====================================================
+// CONFIGURA EMAIL MITTENTE / DESTINATARIO
+// =====================================================
+function _getEmailSettings() {
+  var props = PropertiesService.getScriptProperties();
+  return {
+    destinatario: props.getProperty('EMAIL_DESTINATARIO') || CONFIG.EMAIL_NOTIFICHE,
+    nomeMittente: props.getProperty('NOME_MITTENTE') || 'Antonio Tritto',
+    replyTo:      props.getProperty('EMAIL_REPLY_TO')  || ''
+  };
+}
+function mostraFormImpostazioniEmail() {
+  var cfg = _getEmailSettings();
+  var accountAttivo = Session.getActiveUser().getEmail();
+  var html = '<html><head><base target="_top"><style>' +
+    '* { box-sizing: border-box; margin: 0; padding: 0; }' +
+    'body { font-family: "Google Sans", Arial, sans-serif; padding: 24px; background: linear-gradient(135deg, #37474f 0%, #546e7a 100%); }' +
+    '.form-container { background: white; padding: 28px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }' +
+    'h2 { color: #1a237e; margin-bottom: 24px; font-size: 20px; text-align: center; border-bottom: 3px solid #546e7a; padding-bottom: 12px; }' +
+    '.form-group { margin-bottom: 20px; }' +
+    'label { display: block; margin-bottom: 8px; font-weight: 600; color: #37474f; font-size: 14px; }' +
+    '.required::after { content: " *"; color: #d32f2f; }' +
+    'input { width: 100%; padding: 12px 14px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px; font-family: inherit; }' +
+    'input:focus { outline: none; border-color: #546e7a; box-shadow: 0 0 0 3px rgba(84,110,122,0.15); }' +
+    'input[readonly] { background: #f5f5f5; color: #78909c; cursor: not-allowed; border-style: dashed; }' +
+    '.help-text { font-size: 12px; color: #78909c; margin-top: 5px; }' +
+    '.info-box { background: #e3f2fd; border-left: 4px solid #1976d2; padding: 12px 16px; border-radius: 6px; margin-bottom: 24px; font-size: 13px; color: #0d47a1; }' +
+    '.warn-box { background: #fff8e1; border-left: 4px solid #f9a825; padding: 10px 14px; border-radius: 6px; margin-top: 6px; font-size: 12px; color: #e65100; }' +
+    '.button-group { display: flex; gap: 12px; margin-top: 28px; justify-content: flex-end; }' +
+    'button { padding: 12px 28px; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; }' +
+    '.btn-primary { background: linear-gradient(135deg, #37474f 0%, #546e7a 100%); color: white; }' +
+    '.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(84,110,122,0.4); }' +
+    '.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }' +
+    '.btn-secondary { background: white; color: #546e7a; border: 2px solid #e0e0e0; }' +
+    '.message { display: none; padding: 14px 18px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; font-weight: 500; }' +
+    '.success-message { background: #e8f5e9; border-left: 4px solid #4caf50; color: #2e7d32; }' +
+    '.error-message { background: #ffebee; border-left: 4px solid #f44336; color: #c62828; }' +
+    '</style></head><body><div class="form-container">' +
+    '<h2>✉️ Configura Email Alert</h2>' +
+    '<div id="successMessage" class="message success-message"></div>' +
+    '<div id="errorMessage" class="message error-message"></div>' +
+    '<div class="info-box">⚙️ Le impostazioni vengono salvate nello script e rimangono attive anche dopo aggiornamenti del codice.</div>' +
+    '<form id="emailForm">' +
+    '<div class="form-group">' +
+    '  <label>Account mittente (attivo)</label>' +
+    '  <input type="text" value="' + accountAttivo + '" readonly>' +
+    '  <div class="warn-box">⚠️ L\'indirizzo FROM è sempre l\'account Google proprietario del foglio. Per cambiarlo, sposta il foglio su un altro account Google.</div>' +
+    '</div>' +
+    '<div class="form-group">' +
+    '  <label class="required">Nome visualizzato mittente</label>' +
+    '  <input type="text" id="nomeMittente" value="' + cfg.nomeMittente + '" required placeholder="es. Antonio Tritto CRM">' +
+    '  <div class="help-text">Nome che appare nella inbox del destinatario</div>' +
+    '</div>' +
+    '<div class="form-group">' +
+    '  <label class="required">Email destinatario (ricezione alert)</label>' +
+    '  <input type="email" id="emailDestinario" value="' + cfg.destinatario + '" required placeholder="es. antonio@azienda.com">' +
+    '  <div class="help-text">Indirizzo a cui vengono inviati gli alert giornalieri</div>' +
+    '</div>' +
+    '<div class="form-group">' +
+    '  <label>Reply-To (opzionale)</label>' +
+    '  <input type="email" id="emailReplyTo" value="' + cfg.replyTo + '" placeholder="es. antonio@azienda.com (lascia vuoto per usare il mittente)">' +
+    '  <div class="help-text">Indirizzo a cui arrivano le risposte alle email. Utile se mittente e risposta devono essere diversi.</div>' +
+    '</div>' +
+    '<div class="button-group">' +
+    '  <button type="button" class="btn-secondary" onclick="google.script.host.close()">Annulla</button>' +
+    '  <button type="submit" class="btn-primary">💾 Salva Impostazioni</button>' +
+    '</div></form></div>' +
+    '<script>' +
+    'document.getElementById("emailForm").addEventListener("submit", function(e) {' +
+    '  e.preventDefault();' +
+    '  var btn = document.querySelector(".btn-primary"); btn.disabled = true; btn.textContent = "Salvataggio...";' +
+    '  var data = {' +
+    '    nomeMittente: document.getElementById("nomeMittente").value.trim(),' +
+    '    destinatario: document.getElementById("emailDestinario").value.trim(),' +
+    '    replyTo: document.getElementById("emailReplyTo").value.trim()' +
+    '  };' +
+    '  google.script.run' +
+    '    .withSuccessHandler(function(r) {' +
+    '      if (r.success) {' +
+    '        document.getElementById("successMessage").textContent = "✅ Impostazioni salvate! I prossimi alert useranno questi indirizzi.";' +
+    '        document.getElementById("successMessage").style.display = "block";' +
+    '        setTimeout(function() { google.script.host.close(); }, 2000);' +
+    '      } else {' +
+    '        document.getElementById("errorMessage").textContent = "❌ " + r.message;' +
+    '        document.getElementById("errorMessage").style.display = "block";' +
+    '        btn.disabled = false; btn.textContent = "💾 Salva Impostazioni";' +
+    '      }' +
+    '    })' +
+    '    .withFailureHandler(function(err) {' +
+    '      document.getElementById("errorMessage").textContent = "❌ " + err.message;' +
+    '      document.getElementById("errorMessage").style.display = "block";' +
+    '      btn.disabled = false; btn.textContent = "💾 Salva Impostazioni";' +
+    '    })' +
+    '    .salvaImpostazioniEmail(data);' +
+    '});' +
+    '</script></body></html>';
+  SpreadsheetApp.getUi().showModalDialog(
+    HtmlService.createHtmlOutput(html).setWidth(520).setHeight(620),
+    '✉️ Configura Email Mittente/Destinatario'
+  );
+}
+function salvaImpostazioniEmail(data) {
+  try {
+    if (!data.destinatario || !data.nomeMittente) {
+      return { success: false, message: 'Nome mittente e email destinatario sono obbligatori.' };
+    }
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('EMAIL_DESTINATARIO', data.destinatario);
+    props.setProperty('NOME_MITTENTE', data.nomeMittente);
+    props.setProperty('EMAIL_REPLY_TO', data.replyTo || '');
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.toString() };
+  }
 }
 function _costruisciEmailAlert(ad) {
   var html = '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:700px;margin:0 auto;">' +
