@@ -2,8 +2,9 @@ name: Saturday Brief
 
 on:
   schedule:
-    # Ogni sabato alle 06:00 UTC = 07:00 CET (08:00 CEST in estate)
-    - cron: '0 6 * * 6'
+    # Ogni sabato alle 07:00 UTC = 08:00 CET (ora di Roma in inverno)
+    # In estate (CEST, UTC+2) corrisponde alle 09:00 — per forzare le 08:00 estive cambiare in '0 6 * * 6'
+    - cron: '0 7 * * 6'
   # Trigger manuale per test e prime esecuzioni
   workflow_dispatch:
 
@@ -53,9 +54,12 @@ jobs:
 
           exit $SCRIPT_EXIT
         env:
-          NOTION_API_KEY:     ${{ secrets.NOTION_API_KEY }}
-          CLAUDE_API_KEY:     ${{ secrets.CLAUDE_API_KEY }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          NOTION_API_KEY:       ${{ secrets.NOTION_API_KEY }}
+          CLAUDE_API_KEY:       ${{ secrets.CLAUDE_API_KEY }}
+          NOTION_DATABASE_ID:   ${{ secrets.NOTION_DATABASE_ID }}
+          GMAIL_APP_PASSWORD:   ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_SENDER:         antoniotritto@gmail.com
+          GMAIL_RECIPIENT:      antoniotritto@gmail.com
 
       - name: Carica log come artifact
         if: always()

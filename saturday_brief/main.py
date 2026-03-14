@@ -17,6 +17,7 @@ import sys
 from news_fetcher import fetch_weekly_news
 from notion_helper import ensure_database_schema, get_recent_topics, publish_spunti
 from claude_agent import generate_spunti
+from email_sender import send_brief
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +70,11 @@ def main() -> None:
     logger.info("Pubblicazione %d spunti su Notion...", len(spunti))
     created = publish_spunti(database_id, spunti, title_prop)
 
-    # 7. Riepilogo
+    # 7. Invia email di riepilogo
+    notion_url = f"https://www.notion.so/{database_id.replace('-', '')}"
+    send_brief(spunti, notion_db_url=notion_url)
+
+    # 8. Riepilogo
     logger.info("=" * 60)
     logger.info("Saturday Brief completato: %d/%d spunti pubblicati su Notion.", created, len(spunti))
     logger.info("=" * 60)
