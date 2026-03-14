@@ -13,7 +13,8 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 4096
+MAX_TOKENS = 6144
+MAX_NEWS_INPUT = 15  # articoli inviati a Claude (prende i più recenti)
 
 SYSTEM_PROMPT = """Sei un editor di contenuti finanziari specializzato nel mercato del Sud Italia.
 Il tuo compito è trasformare notizie economiche reali in spunti articolo iperspecifici per
@@ -82,7 +83,7 @@ def generate_spunti(notizie: list[dict], precedenti: list[str]) -> list[dict]:
     api_key = os.environ["CLAUDE_API_KEY"]
     client = anthropic.Anthropic(api_key=api_key)
 
-    user_prompt = _build_user_prompt(notizie, precedenti)
+    user_prompt = _build_user_prompt(notizie[:MAX_NEWS_INPUT], precedenti)
 
     response = client.messages.create(
         model=MODEL,
