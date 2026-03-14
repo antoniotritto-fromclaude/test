@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 6144
-MAX_NEWS_INPUT = 15  # articoli inviati a Claude (prende i più recenti)
+TOP_ARTICLES = 10   # articoli selezionati dopo lo scoring da passare al prompt spunti
 
 SYSTEM_PROMPT = """Sei un editor di contenuti finanziari specializzato nel mercato del Sud Italia.
 Il tuo compito è trasformare notizie economiche reali in spunti articolo iperspecifici per
@@ -75,15 +75,72 @@ Genera esattamente 10 spunti come JSON array. Ogni elemento deve avere questa st
 Ricorda: varia i profili e le città. Rispondi SOLO con il JSON array."""
 
 
+def _score_and_select(client, notizie: list[dict]) -> list[dict]:
+    """
+    Asks Claude to score each article 0-100 for relevance to Southern Italian
+    SME owners and professionals, then returns the top TOP_ARTICLES sorted by score.
+    Falls back to the original order if scoring fails.
+    """
+    news_block = "\n".join(
+        f"[{i}] {n['titolo']} ({n['fonte']}, {n['data']})"
+        for i, n in enumerate(notizie)
+    )
+
+    prompt = f"""Assegna un punteggio da 0 a 100 a ogni articolo in base alla RILEVANZA per
+professionisti e PMI del Sud Italia (dentisti, avvocati, commercialisti, medici,
+imprenditori, ristoratori, artigiani).
+
+Criteri:
+- 80-100: Impatto pratico diretto su tasse, mercati, normativa, costi aziendali, lavoro
+- 60-79: Rilevante per economia o finanza italiana in generale
+- 40-59: Notizia economica con impatto indiretto
+- 0-39: Non rilevante (politica generale, esteri non finanziari, sport, lifestyle)
+
+ARTICOLI:
+{news_block}
+
+Rispondi SOLO con un JSON array: [{{"id": 0, "score": 85}}, {{"id": 1, "score": 42}}, ...]"""
+
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        scores = _parse_json(response.content[0].text.strip())
+        if scores and isinstance(scores, list):
+            score_map = {item["id"]: item["score"] for item in scores if "id" in item and "score" in item}
+            for i, article in enumerate(notizie):
+                article["score"] = score_map.get(i, 0)
+            ranked = sorted(notizie, key=lambda x: x.get("score", 0), reverse=True)
+            top = ranked[:TOP_ARTICLES]
+            logger.info(
+                "Scoring completato. Top %d articoli (score min %d, max %d): %s",
+                len(top),
+                min(a.get("score", 0) for a in top),
+                max(a.get("score", 0) for a in top),
+                ", ".join(f"{a['fonte']}({a.get('score',0)})" for a in top),
+            )
+            return top
+    except Exception as e:
+        logger.warning("Scoring fallito (%s) — uso ordine originale.", e)
+
+    return notizie[:TOP_ARTICLES]
+
+
 def generate_spunti(notizie: list[dict], precedenti: list[str]) -> list[dict]:
     """
-    Calls Claude API and returns a list of 10 spunto dicts.
-    Retries once with a correction prompt if the response is not valid JSON.
+    Scores all articles 0-100, selects the top TOP_ARTICLES,
+    then calls Claude to generate 10 spunti from those.
+    Retries once if the response is not valid JSON.
     """
     api_key = os.environ["CLAUDE_API_KEY"]
     client = anthropic.Anthropic(api_key=api_key)
 
-    user_prompt = _build_user_prompt(notizie[:MAX_NEWS_INPUT], precedenti)
+    # Step 1: score & select best articles
+    top_notizie = _score_and_select(client, notizie)
+
+    user_prompt = _build_user_prompt(top_notizie, precedenti)
 
     response = client.messages.create(
         model=MODEL,

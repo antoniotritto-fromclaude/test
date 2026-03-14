@@ -17,9 +17,10 @@ logger = logging.getLogger(__name__)
 RSS_SOURCES = [
     {"url": "https://www.ilsole24ore.com/rss/economia.xml",                "fonte": "Sole24Ore"},
     {"url": "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",   "fonte": "ANSA"},
-    {"url": "https://www.wallstreetitalia.com/feed/",                       "fonte": "WallStreetItalia"},
+    {"url": "https://www.wallstreetitalia.com/breaking-news/feed/",         "fonte": "WallStreetItalia"},
     {"url": "https://www.finanzaonline.com/feed/",                          "fonte": "FinanzaOnline"},
     {"url": "https://borsaefinanza.it/feed/",                               "fonte": "BorsaEFinanza"},
+    {"url": "https://quifinanza.it/attualita/feed/?iol_show_feed=gnews",    "fonte": "QuiFinanza"},
     {"url": "https://www.corriere.it/rss/economia.xml",                     "fonte": "Corriere"},
 ]
 
