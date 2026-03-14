@@ -15,11 +15,12 @@ from urllib.error import URLError
 logger = logging.getLogger(__name__)
 
 RSS_SOURCES = [
-    {"url": "https://www.ilsole24ore.com/rss/economia.xml",                         "fonte": "Sole24Ore"},
-    {"url": "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",            "fonte": "ANSA"},
-    {"url": "https://www.bancaditalia.it/media/notizie/notizie-2024/index.html?rss", "fonte": "BancaItalia"},
-    {"url": "https://feeds.finanza.com/feeds/wired",                                 "fonte": "Wired"},
-    {"url": "https://www.corriere.it/rss/economia.xml",                              "fonte": "Corriere"},
+    {"url": "https://www.ilsole24ore.com/rss/economia.xml",                "fonte": "Sole24Ore"},
+    {"url": "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",   "fonte": "ANSA"},
+    {"url": "https://www.wallstreetitalia.com/feed/",                       "fonte": "WallStreetItalia"},
+    {"url": "https://www.finanzaonline.com/feed/",                          "fonte": "FinanzaOnline"},
+    {"url": "https://borsaefinanza.it/feed/",                               "fonte": "BorsaEFinanza"},
+    {"url": "https://www.corriere.it/rss/economia.xml",                     "fonte": "Corriere"},
 ]
 
 MAX_PER_SOURCE = 6
@@ -78,11 +79,20 @@ def _parse_date(raw: str) -> datetime | None:
     return None
 
 
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/122.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+}
+
+
 def _fetch_url(url: str) -> str | None:
-    """Fetch URL content as UTF-8 string with a browser User-Agent."""
-    req = Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (compatible; SaturdayBrief/1.0; +https://github.com)"
-    })
+    """Fetch URL content as UTF-8 string with a realistic browser User-Agent."""
+    req = Request(url, headers=_HEADERS)
     try:
         with urlopen(req, timeout=15) as resp:
             return resp.read().decode("utf-8", errors="replace")
