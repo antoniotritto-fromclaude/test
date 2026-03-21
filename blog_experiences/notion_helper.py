@@ -1,9 +1,14 @@
 """
 Notion API wrapper for Blog Experiences.
-Reads existing blog ideas (last 90 days) and publishes new ones.
+Reads existing blog ideas (last 90 days) and publishes new ones
+directly into the I Love Apulia blog CMS database.
 
-Target database: content planning database for "I Love Apulia" blog.
-Properties mirror the blog's article schema plus editorial tracking fields.
+Existing schema (already in the database — do NOT modify):
+  Titolo (title), Sottotitolo (text), Slug (text),
+  Categoria (text), Provincia (text), Cover (text), Immagini (text)
+
+Added automatically if missing:
+  Idea Contenuto (rich_text), Fonte (url), Data Generazione (date), Status (select)
 """
 
 import logging
@@ -15,36 +20,14 @@ from notion_client.errors import APIResponseError
 
 logger = logging.getLogger(__name__)
 
-# Properties expected in the content-ideas database.
-# Added automatically if missing.
-REQUIRED_PROPERTIES = {
-    "Sottotitolo": {"rich_text": {}},
-    "Categoria": {
-        "select": {
-            "options": [
-                {"name": "dove-mangiare"},
-                {"name": "dove-dormire"},
-                {"name": "altri-servizi"},
-            ]
-        }
-    },
-    "Provincia": {
-        "select": {
-            "options": [
-                {"name": "Bari"},
-                {"name": "Brindisi"},
-                {"name": "Foggia"},
-                {"name": "Lecce"},
-                {"name": "Taranto"},
-                {"name": "BAT"},
-            ]
-        }
-    },
+# Only properties NOT already present in the blog CMS database.
+# Existing properties (Titolo, Sottotitolo, Slug, Categoria, Provincia, Cover, Immagini)
+# are left untouched.
+EXTRA_PROPERTIES = {
     "Idea Contenuto": {"rich_text": {}},
-    "Slug Suggerito": {"rich_text": {}},
     "Fonte": {"url": {}},
     "Data Generazione": {"date": {}},
-    "Status": {
+    "Status Idea": {
         "select": {
             "options": [
                 {"name": "Da valutare"},
@@ -65,8 +48,9 @@ def _get_client() -> Client:
 
 def ensure_database_schema(database_id: str) -> str:
     """
-    Verifies the database exists, adds missing properties, and returns
-    the name of the title property (renaming it to 'Titolo' if needed).
+    Verifies the database exists, adds the extra editorial-tracking properties
+    if missing, and returns the name of the title property.
+    Does NOT rename or modify existing properties.
     """
     client = _get_client()
     try:
@@ -74,36 +58,22 @@ def ensure_database_schema(database_id: str) -> str:
     except APIResponseError as e:
         raise RuntimeError(
             f"Database Notion non trovato (ID: {database_id}). "
-            f"Verifica il secret NOTION_BLOG_DATABASE_ID e che l'integration abbia accesso. "
-            f"Errore: {e}"
+            f"Verifica il secret NOTION_BLOG_DATABASE_ID. Errore: {e}"
         )
 
     existing = db.get("properties", {})
 
-    # Find and normalise the title property
+    # Find the title property name
     title_prop_name = "Titolo"
     for name, prop in existing.items():
         if prop.get("type") == "title":
             title_prop_name = name
             break
 
-    if title_prop_name != "Titolo":
-        logger.info("Rinomino proprietà title da '%s' a 'Titolo'", title_prop_name)
-        try:
-            client.databases.update(
-                database_id=database_id,
-                properties={title_prop_name: {"name": "Titolo"}},
-            )
-            title_prop_name = "Titolo"
-        except Exception as e:
-            logger.warning(
-                "Impossibile rinominare title property: %s. Uso '%s'.", e, title_prop_name
-            )
-
-    missing = {k: v for k, v in REQUIRED_PROPERTIES.items() if k not in existing}
+    missing = {k: v for k, v in EXTRA_PROPERTIES.items() if k not in existing}
     if missing:
         logger.info(
-            "Aggiungo %d proprietà mancanti al database: %s",
+            "Aggiungo %d proprietà editoriali al database: %s",
             len(missing),
             list(missing.keys()),
         )
@@ -117,7 +87,7 @@ def ensure_database_schema(database_id: str) -> str:
 
 def get_recent_ideas(database_id: str, days: int = 90) -> list[str]:
     """
-    Returns titles + categories of ideas published in the last `days` days.
+    Returns titles + categories of ideas added in the last `days` days.
     Used to avoid topic repetition in the Claude prompt.
     """
     client = _get_client()
@@ -138,13 +108,18 @@ def get_recent_ideas(database_id: str, days: int = 90) -> list[str]:
         if cursor:
             kwargs["start_cursor"] = cursor
 
-        response = client.databases.query(**kwargs)
+        try:
+            response = client.databases.query(**kwargs)
+        except APIResponseError:
+            # Property may not exist yet on first run — skip dedup
+            logger.warning("Impossibile leggere idee precedenti (property assente?). Procedo senza dedup.")
+            return []
 
         for page in response.get("results", []):
             props = page.get("properties", {})
             title = _get_title(props)
-            categoria = _get_select(props, "Categoria")
-            provincia = _get_select(props, "Provincia")
+            categoria = _get_text_prop(props, "Categoria")
+            provincia = _get_text_prop(props, "Provincia")
             if title:
                 results.append(f"{title} — {categoria} — {provincia}")
 
@@ -158,7 +133,7 @@ def get_recent_ideas(database_id: str, days: int = 90) -> list[str]:
 
 def publish_idee(database_id: str, idee: list[dict], title_prop: str = "Titolo") -> int:
     """
-    Creates one Notion page per idea articolo.
+    Creates one Notion page per idea articolo in the blog CMS database.
     Returns the number of pages successfully created.
     """
     client = _get_client()
@@ -170,6 +145,7 @@ def publish_idee(database_id: str, idee: list[dict], title_prop: str = "Titolo")
             client.pages.create(
                 parent={"database_id": database_id},
                 properties=_build_page_properties(idea, today, title_prop),
+                children=_build_page_body(idea),
             )
             logger.info(
                 "Idea %d/%d creata: [%s | %s] %s",
@@ -192,7 +168,6 @@ def publish_idee(database_id: str, idee: list[dict], title_prop: str = "Titolo")
 
 def _build_page_properties(idea: dict, today: str, title_prop: str = "Titolo") -> dict:
     fonte_url = idea.get("fonte_url") or None
-    # Notion rejects empty strings for URL properties
     if fonte_url == "":
         fonte_url = None
 
@@ -203,17 +178,17 @@ def _build_page_properties(idea: dict, today: str, title_prop: str = "Titolo") -
         "Sottotitolo": {
             "rich_text": [{"text": {"content": idea.get("sottotitolo", "")}}]
         },
+        "Slug": {
+            "rich_text": [{"text": {"content": idea.get("slug", "")}}]
+        },
         "Categoria": {
-            "select": {"name": idea.get("categoria", "altri-servizi")}
+            "rich_text": [{"text": {"content": idea.get("categoria", "")}}]
         },
         "Provincia": {
-            "select": {"name": idea.get("provincia", "Bari")}
+            "rich_text": [{"text": {"content": idea.get("provincia", "")}}]
         },
         "Idea Contenuto": {
             "rich_text": [{"text": {"content": idea.get("idea_contenuto", "")}}]
-        },
-        "Slug Suggerito": {
-            "rich_text": [{"text": {"content": idea.get("slug", "")}}]
         },
         "Fonte": {
             "url": fonte_url
@@ -221,10 +196,49 @@ def _build_page_properties(idea: dict, today: str, title_prop: str = "Titolo") -
         "Data Generazione": {
             "date": {"start": today}
         },
-        "Status": {
+        "Status Idea": {
             "select": {"name": "Da valutare"}
         },
     }
+
+
+def _build_page_body(idea: dict) -> list[dict]:
+    """Creates Notion blocks for the page body with the full idea breakdown."""
+    blocks = []
+
+    idea_contenuto = idea.get("idea_contenuto", "")
+    if idea_contenuto:
+        blocks.append({
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {
+                "rich_text": [{"type": "text", "text": {"content": "💡 Idea Contenuto"}}]
+            },
+        })
+        blocks.append({
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {
+                "rich_text": [{"type": "text", "text": {"content": idea_contenuto}}]
+            },
+        })
+
+    fonte_url = idea.get("fonte_url", "")
+    if fonte_url:
+        blocks.append({
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {
+                "rich_text": [{"type": "text", "text": {"content": "🔗 Fonte"}}]
+            },
+        })
+        blocks.append({
+            "object": "block",
+            "type": "bookmark",
+            "bookmark": {"url": fonte_url},
+        })
+
+    return blocks
 
 
 def _get_title(props: dict) -> str:
@@ -236,7 +250,10 @@ def _get_title(props: dict) -> str:
     return ""
 
 
-def _get_select(props: dict, key: str) -> str:
+def _get_text_prop(props: dict, key: str) -> str:
     prop = props.get(key, {})
-    sel = prop.get("select") or {}
-    return sel.get("name", "")
+    # Works for both rich_text and text property types
+    items = prop.get("rich_text", [])
+    if items:
+        return items[0].get("plain_text", "")
+    return ""
