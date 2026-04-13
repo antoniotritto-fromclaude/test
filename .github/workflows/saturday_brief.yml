@@ -2,9 +2,8 @@ name: Saturday Brief
 
 on:
   schedule:
-    # Ogni sabato alle 07:00 UTC = 08:00 CET (ora di Roma in inverno)
-    # In estate (CEST, UTC+2) corrisponde alle 09:00 — per forzare le 08:00 estive cambiare in '0 6 * * 6'
-    - cron: '0 7 * * 6'
+    - cron: '0 6 * * 6'   # 06:00 UTC = 08:00 CEST (estate, apr–ott)
+    - cron: '0 7 * * 6'   # 07:00 UTC = 08:00 CET  (inverno, nov–mar)
   # Trigger manuale per test e prime esecuzioni
   workflow_dispatch:
 
@@ -16,18 +15,34 @@ jobs:
       contents: write
 
     steps:
+      - name: Verifica orario Roma
+        id: check
+        run: |
+          HOUR=$(TZ="Europe/Rome" date +%H)
+          echo "Ora di Roma: $HOUR"
+          if [ "$HOUR" = "08" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Non sono le 08:00 di Roma (ora attuale: $HOUR) — esecuzione saltata."
+          fi
+
       - name: Checkout repository
+        if: steps.check.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Python 3.11
+        if: steps.check.outputs.should_run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Installa dipendenze
+        if: steps.check.outputs.should_run == 'true'
         run: pip install --no-cache-dir -r saturday_brief/requirements.txt
 
       - name: Diagnosi e avvio Saturday Brief
+        if: steps.check.outputs.should_run == 'true'
         working-directory: saturday_brief
         run: |
           LOG_FILE="../run.log"
@@ -62,7 +77,7 @@ jobs:
           GMAIL_RECIPIENT:      antoniotritto@gmail.com
 
       - name: Carica log come artifact
-        if: always()
+        if: steps.check.outputs.should_run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: saturday-brief-log
@@ -70,7 +85,7 @@ jobs:
           retention-days: 7
 
       - name: Posta log come commit comment
-        if: always()
+        if: steps.check.outputs.should_run == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 saturday_brief/post_log_comment.py
