@@ -1,6 +1,6 @@
 """
-Calls Claude API to generate 10 hyper-specific content ideas
-targeted at Southern Italian professionals and entrepreneurs.
+Calls Claude API to generate 5 evidence-based content ideas
+from real Italian financial news, targeted at Southern Italian professionals.
 """
 
 import json
@@ -13,26 +13,28 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
-MAX_TOKENS = 6144
-TOP_ARTICLES = 10   # articoli selezionati dopo lo scoring da passare al prompt spunti
+MAX_TOKENS = 3500
+TOP_ARTICLES = 5   # articoli selezionati dopo lo scoring da passare al prompt spunti
 
 SYSTEM_PROMPT = """Sei un editor di contenuti finanziari specializzato nel mercato del Sud Italia.
-Il tuo compito è trasformare notizie economiche reali in spunti articolo iperspecifici per
-professionisti e imprenditori del Sud Italia (Puglia e dintorni): dentisti, avvocati,
-commercialisti, medici, titolari di PMI, ristoratori, artigiani.
+Il tuo compito è trasformare notizie economiche reali in spunti articolo per professionisti e
+imprenditori del Sud Italia (Puglia e dintorni): dentisti, avvocati, commercialisti, medici,
+titolari di PMI, ristoratori, artigiani.
 
 REGOLE FONDAMENTALI:
-1. Ogni spunto deve citare un professionista concreto con contesto reale e numeri specifici
-   (es: "Un dentista di Bari con studio da 3 poltrone, 2 dipendenti e 280k di fatturato annuo").
-2. Spiega l'impatto PRATICO e IMMEDIATO della notizia sulla sua vita economica quotidiana:
-   cosa cambia in euro, in comportamenti, in decisioni da prendere subito.
-3. Ogni spunto si collega a un articolo specifico dalla lista fornita — nessuna notizia inventata.
-4. I titoli devono essere SPECIFICI: mai frasi come "cosa significa per i mercati",
-   "impatto sul settore", "il professionista e la nuova legge". Usa nomi, cifre, situazioni reali.
-5. L'apertura narrativa deve agganciare in prima riga con una domanda, un dato sorprendente
-   o una scena concreta — come un articolo di qualità.
-6. Varia i profili: non tutti dentisti, non tutti Bari. Distribuisci tra le categorie disponibili
-   e tra diverse città del Sud Italia.
+1. Ogni spunto deve essere fondato ESCLUSIVAMENTE su dati, cifre, norme o fatti riportati
+   nell'articolo di riferimento. NON inventare numeri, percentuali, scadenze o scenari
+   che non compaiono nell'articolo.
+2. Il titolo deve citare l'impatto concreto sull'audience (categoria professionale + dato reale
+   tratto dall'articolo), ad esempio: "Aliquota IRPEF al 23% per redditi fino a 50k: cosa cambia
+   per i liberi professionisti" — mai scenari di fantasia o profili inventati.
+3. Il contesto spiega sinteticamente cosa dice l'articolo e perché è rilevante per quella
+   categoria professionale. Se l'articolo riporta cifre specifiche, usale; se non le riporta,
+   non inventarle.
+4. L'apertura narrativa aggancia con un dato sorprendente, una domanda o un fatto concreto
+   tratto dall'articolo stesso — non da uno scenario immaginario.
+5. Varia i profili (pubblico) e le categorie: non tutti dentisti, non tutte notizie fiscali.
+6. L'articolo_url deve corrispondere esattamente a uno degli URL nella lista fornita.
 
 OUTPUT: Rispondi UNICAMENTE con un JSON array valido. Zero testo aggiuntivo prima o dopo il JSON."""
 
@@ -61,18 +63,18 @@ ARGOMENTI GIÀ TRATTATI NEGLI ULTIMI 60 GIORNI (NON ripetere temi simili):
 
 ---
 
-Genera esattamente 10 spunti come JSON array. Ogni elemento deve avere questa struttura:
+Genera esattamente 5 spunti come JSON array. Ogni elemento deve avere questa struttura:
 {{
-  "titolo": "Titolo specifico con professionista, città e cifre concrete",
+  "titolo": "Titolo che cita la categoria professionale e il dato reale dell'articolo",
   "pubblico": "Dentista|Avvocato|PMI|Imprenditore|Professionista generico",
   "categoria": "Fiscale|Mercati|Previdenza|Immobiliare|Credito|Normativa|Economia",
-  "contesto": "Tre righe che spiegano la notizia e il suo impatto pratico e immediato su questo professionista specifico",
-  "apertura_narrativa": "Una frase hook che apre l'articolo con domanda, dato sorprendente o scena concreta",
+  "contesto": "2-3 frasi che spiegano cosa dice concretamente l'articolo e perché è rilevante per questa categoria — solo fatti riportati nell'articolo",
+  "apertura_narrativa": "Una frase che apre con un dato, una cifra o un fatto concreto tratto dall'articolo",
   "articolo_url": "URL esatto dalla lista notizie sopra (deve corrispondere a un articolo esistente)",
   "fonte": "Sole24Ore|ANSA|Reuters|MEF|BancaItalia"
 }}
 
-Ricorda: varia i profili e le città. Rispondi SOLO con il JSON array."""
+Ricorda: ogni spunto si basa su un articolo diverso, varia il pubblico. Rispondi SOLO con il JSON array."""
 
 
 def _score_and_select(client, notizie: list[dict]) -> list[dict]:
@@ -131,7 +133,7 @@ Rispondi SOLO con un JSON array: [{{"id": 0, "score": 85}}, {{"id": 1, "score": 
 def generate_spunti(notizie: list[dict], precedenti: list[str]) -> list[dict]:
     """
     Scores all articles 0-100, selects the top TOP_ARTICLES,
-    then calls Claude to generate 10 spunti from those.
+    then calls Claude to generate 5 evidence-based spunti from those.
     Retries once if the response is not valid JSON.
     """
     api_key = os.environ["CLAUDE_API_KEY"]
